@@ -22,16 +22,15 @@ PROMPT = """
 
 Таблицы:
 - videos(id, creator_id, video_created_at, views_count, likes_count, comments_count, reports_count, ...)
-- video_snapshots(video_id, delta_views_count, created_at, ...)
+- video_snapshots(id, video_id, views_count, likes_count, comments_count, reports_count, delta_views_count, delta_likes_count, delta_comments_count, delta_reports_count, created_at, ...)
 
 Правила:
-1. Если вопрос про "сколько видео", "сколько видео набрало", "опубликовано", "у креатора", "в июне 2025" — используй ТОЛЬКО таблицу `videos`.
-2. Если вопрос про "суммарное количество просмотров у видео, опубликованных в X" — используй `SUM(views_count)`.
-3. Если вопрос про "количество видео у креатора с id ... НАБРАЛИ БОЛЬШЕ N ПРОСМОТРОВ" — используй `COUNT(*)` с двумя условиями: `creator_id = '...' AND views_count > N`.
-4. Дата публикации = video_created_at.
-5. Для месяца: `EXTRACT(MONTH FROM video_created_at) = 6 AND EXTRACT(YEAR FROM video_created_at) = 2025`.
-6. Для прироста за день — используй `video_snapshots` + `delta_*`.
-7. Ответ должен начинаться с SELECT и заканчиваться ;. Только SQL.
+1. Если вопрос про "сколько видео", "сколько набрало", "опубликовано", "у креатора" + итоговые метрики → используй ТОЛЬКО `videos`.
+2. Если вопрос про **прирост, дельту, рост, "на сколько выросли"** — используй `SUM(delta_views_count)` из `video_snapshots`.
+3. Если в таком запросе есть **условие по `creator_id`**, нужно **JOIN video_snapshots с videos** по `video_id = videos.id`.
+4. Дата и время в снапшотах — поле `created_at` (тип TIMESTAMP).
+5. Для диапазона времени используй: `created_at >= '2025-11-28 10:00:00' AND created_at <= '2025-11-28 15:00:00'`.
+6. Ответ должен начинаться с `SELECT` и заканчиваться `;`. Только SQL.
 
 Примеры:
 Вопрос: Сколько всего видео есть в системе?
@@ -40,14 +39,11 @@ PROMPT = """
 Вопрос: Сколько видео набрало больше 100000 просмотров за всё время?
 Ответ: SELECT COUNT(*) FROM videos WHERE views_count > 100000;
 
-Вопрос: Сколько видео у креатора с id aca1061a9d324ecf8c3fa2bb32d7be63 набрали больше 10000 просмотров по итоговой статистике?
-Ответ: SELECT COUNT(*) FROM videos WHERE creator_id = 'aca1061a9d324ecf8c3fa2bb32d7be63' AND views_count > 10000;
+Вопрос: Сколько видео у креатора с id abc123 набрали больше 10000 просмотров?
+Ответ: SELECT COUNT(*) FROM videos WHERE creator_id = 'abc123' AND views_count > 10000;
 
-Вопрос: Сколько видео опубликовал креатор с id abc123 с 1 по 5 ноября 2025?
-Ответ: SELECT COUNT(*) FROM videos WHERE creator_id = 'abc123' AND DATE(video_created_at) BETWEEN '2025-11-01' AND '2025-11-05';
-
-Вопрос: Какое суммарное количество просмотров набрали все видео, опубликованные в июне 2025 года?
-Ответ: SELECT SUM(views_count) FROM videos WHERE EXTRACT(YEAR FROM video_created_at) = 2025 AND EXTRACT(MONTH FROM video_created_at) = 6;
+Вопрос: На сколько просмотров суммарно выросли все видео креатора с id cd87be38b50b4fdd8342bb3c383f3c7d в промежутке с 10:00 до 15:00 28 ноября 2025 года?
+Ответ: SELECT COALESCE(SUM(s.delta_views_count), 0) FROM video_snapshots s JOIN videos v ON s.video_id = v.id WHERE v.creator_id = 'cd87be38b50b4fdd8342bb3c383f3c7d' AND s.created_at >= '2025-11-28 10:00:00' AND s.created_at <= '2025-11-28 15:00:00';
 
 Вопрос: На сколько просмотров в сумме выросли все видео 28 ноября 2025?
 Ответ: SELECT COALESCE(SUM(delta_views_count), 0) FROM video_snapshots WHERE DATE(created_at) = '2025-11-28';
@@ -57,6 +53,9 @@ PROMPT = """
 
 Вопрос: Сколько всего есть замеров статистики, в которых число просмотров за час оказалось отрицательным?
 Ответ: SELECT COUNT(*) FROM video_snapshots WHERE delta_views_count < 0;
+
+Вопрос: Какое суммарное количество просмотров набрали все видео, опубликованные в июне 2025 года?
+Ответ: SELECT SUM(views_count) FROM videos WHERE EXTRACT(YEAR FROM video_created_at) = 2025 AND EXTRACT(MONTH FROM video_created_at) = 6;
 
 Вопрос: {question}
 Ответ:
