@@ -9,7 +9,7 @@ import ollama
 logging.basicConfig(level=logging.INFO)
 
 # Токен от BotFather
-BOT_TOKEN = "YOUR_BOT_TOKEN_HERE"
+BOT_TOKEN = "7895959813:AAGcbGifvpZntkpq53XvlQVv705_3I6ZDL8"
 
 
 # Подключение к БД
