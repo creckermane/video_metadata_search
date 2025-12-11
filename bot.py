@@ -68,11 +68,12 @@ PROMPT = """
 - video_snapshots(video_id, delta_views_count, created_at, ...)
 
 Правила:
-1. «Дата публикации видео» = поле `video_created_at` в таблице `videos`.
-2. Если вопрос про количество видео, итоговые метрики, креаторов — используй ТОЛЬКО таблицу `videos`.
-3. Если вопрос про прирост, дельту, отрицательные изменения — используй `video_snapshots` и `delta_*`.
-4. Для диапазона дат используй: `DATE(video_created_at) BETWEEN 'ГГГГ-ММ-ДД' AND 'ГГГГ-ММ-ДД'`.
-5. Ответ должен начинаться с `SELECT` и заканчиваться `;`. Только SQL.
+1. «Дата публикации» = поле `video_created_at` в таблице `videos`.
+2. Для фильтрации по месяцу и году используй: `EXTRACT(YEAR FROM video_created_at) = 2025 AND EXTRACT(MONTH FROM video_created_at) = 6`.
+3. Для суммы просмотров — `SUM(views_count)`.
+4. Для количества видео — `COUNT(*)`.
+5. Для прироста за день — `SUM(delta_views_count)` из `video_snapshots`.
+6. Ответ должен начинаться с `SELECT` и заканчиваться `;`. Только SQL.
 
 Примеры:
 Вопрос: Сколько всего видео есть в системе?
@@ -81,7 +82,7 @@ PROMPT = """
 Вопрос: Сколько видео набрало больше 100000 просмотров за всё время?
 Ответ: SELECT COUNT(*) FROM videos WHERE views_count > 100000;
 
-Вопрос: Сколько видео у креатора с id aca1061a9d324ecf8c3fa2bb32d7be63 набрали больше 10000 просмотров по итоговой статистике?
+Вопрос: Сколько видео у креатора с id aca1061a9d324ecf8c3fa2bb32d7be63 набрали больше 10000 просмотров?
 Ответ: SELECT COUNT(*) FROM videos WHERE creator_id = 'aca1061a9d324ecf8c3fa2bb32d7be63' AND views_count > 10000;
 
 Вопрос: Сколько видео опубликовал креатор с id 8b76e572635b400c9052286a56176e03 в период с 1 ноября 2025 по 5 ноября 2025 включительно?
@@ -92,9 +93,6 @@ PROMPT = """
 
 Вопрос: На сколько просмотров в сумме выросли все видео 28 ноября 2025?
 Ответ: SELECT COALESCE(SUM(delta_views_count), 0) FROM video_snapshots WHERE DATE(created_at) = '2025-11-28';
-
-Вопрос: Сколько разных видео получали новые просмотры 27 ноября 2025?
-Ответ: SELECT COUNT(DISTINCT video_id) FROM video_snapshots WHERE DATE(created_at) = '2025-11-27' AND delta_views_count > 0;
 
 Вопрос: Сколько всего есть замеров статистики, в которых число просмотров за час оказалось отрицательным?
 Ответ: SELECT COUNT(*) FROM video_snapshots WHERE delta_views_count < 0;
