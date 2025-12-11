@@ -1,6 +1,6 @@
 CREATE TABLE videos (
-    id BIGINT PRIMARY KEY,
-    creator_id BIGINT,
+    id TEXT PRIMARY KEY,
+    creator_id TEXT,
     video_created_at TIMESTAMP,
     views_count BIGINT,
     likes_count BIGINT,
@@ -11,8 +11,8 @@ CREATE TABLE videos (
 );
 
 CREATE TABLE video_snapshots (
-    id BIGINT PRIMARY KEY,
-    video_id BIGINT REFERENCES videos(id),
+    id TEXT PRIMARY KEY,
+    video_id TEXT REFERENCES videos(id),
     views_count BIGINT,
     likes_count BIGINT,
     comments_count BIGINT,

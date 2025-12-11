@@ -1,60 +1,73 @@
+# init_db.py
 import json
 import psycopg2
-from datetime import datetime
 
-# Подключение к БД
-conn = psycopg2.connect(
-    host="localhost",
-    database="video_stats",
-    user="user",
-    password="password"
-)
-cur = conn.cursor()
+def main():
+    # Читаем файл
+    with open('videos.json', 'r', encoding='utf-8') as f:
+        data = json.load(f)
 
-# Загрузка JSON
-with open('videos.json', 'r', encoding='utf-8') as f:
-    data = json.load(f)
+    # Получаем список видео
+    videos = data['videos']  # <-- ключевой момент!
 
-# Вставка данных
-for item in data:
-    # Основное видео
-    cur.execute("""
-        INSERT INTO videos VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
-        ON CONFLICT (id) DO NOTHING;
-    """, (
-        item['id'],
-        item['creator_id'],
-        item['video_created_at'],
-        item['views_count'],
-        item['likes_count'],
-        item['comments_count'],
-        item['reports_count'],
-        item['created_at'],
-        item['updated_at']
-    ))
+    conn = psycopg2.connect(
+        host="localhost",
+        database="video_stats",
+        user="user",
+        password="password"
+    )
+    cur = conn.cursor()
 
-    # Снапшоты
-    for snap in item.get('snapshots', []):
+    for video in videos:
+        # Вставляем видео
         cur.execute("""
-            INSERT INTO video_snapshots VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            INSERT INTO videos (
+                id, creator_id, video_created_at,
+                views_count, likes_count, comments_count, reports_count,
+                created_at, updated_at
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
             ON CONFLICT (id) DO NOTHING;
         """, (
-            snap['id'],
-            item['id'],  # video_id
-            snap['views_count'],
-            snap['likes_count'],
-            snap['comments_count'],
-            snap['reports_count'],
-            snap['delta_views_count'],
-            snap['delta_likes_count'],
-            snap['delta_comments_count'],
-            snap['delta_reports_count'],
-            snap['created_at'],
-            snap['created_at'],  # updated_at
-            snap['created_at']   # временно
+            video['id'],
+            video.get('creator_id'),
+            video.get('video_created_at'),
+            video.get('views_count'),
+            video.get('likes_count'),
+            video.get('comments_count'),
+            video.get('reports_count'),
+            video.get('created_at'),
+            video.get('updated_at')
         ))
 
-conn.commit()
-cur.close()
-conn.close()
-print("Данные загружены.")
+        # Вставляем снапшоты
+        for snap in video.get('snapshots', []):
+            cur.execute("""
+                INSERT INTO video_snapshots (
+                    id, video_id,
+                    views_count, likes_count, comments_count, reports_count,
+                    delta_views_count, delta_likes_count, delta_comments_count, delta_reports_count,
+                    created_at, updated_at
+                ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+                ON CONFLICT (id) DO NOTHING;
+            """, (
+                snap['id'],
+                video['id'],
+                snap['views_count'],
+                snap['likes_count'],
+                snap['comments_count'],
+                snap['reports_count'],
+                snap['delta_views_count'],
+                snap['delta_likes_count'],
+                snap['delta_comments_count'],
+                snap['delta_reports_count'],
+                snap['created_at'],
+                snap.get('updated_at', snap['created_at'])
+            ))
+
+    conn.commit()
+    cur.close()
+    conn.close()
+    print(f"✅ Загружено {len(videos)} видео и много снапшотов")
+
+if __name__ == '__main__':
+    main()

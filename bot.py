@@ -5,15 +5,11 @@ from aiogram.filters import Command
 import psycopg2
 import ollama
 
-# Настройка логов
 logging.basicConfig(level=logging.INFO)
 
-# Токен от BotFather
-BOT_TOKEN = "7895959813:AAGcbGifvpZntkpq53XvlQVv705_3I6ZDL8"
+BOT_TOKEN = ""
 
-
-# Подключение к БД
-def get_db_conn():
+def get_db():
     return psycopg2.connect(
         host="localhost",
         database="video_stats",
@@ -22,86 +18,82 @@ def get_db_conn():
     )
 
 
-# Промт для Ollama
-SYSTEM_PROMPT = """
-Ты — SQL-ассистент для аналитики видео. Есть две таблицы:
+PROMPT = """
+Ты — SQL-бот для аналитики видео. Отвечай ТОЛЬКО валидным SQL-запросом, который возвращает ОДНО целое число. Никаких слов.
 
-1.  **videos**: id, creator_id, video_created_at, views_count, likes_count, comments_count, reports_count, created_at, updated_at.
-2.  **video_snapshots**: id, video_id, views_count, likes_count, comments_count, reports_count, delta_views_count, delta_likes_count, delta_comments_count, delta_reports_count, created_at, updated_at.
+Таблицы:
+- videos(id, creator_id, video_created_at, views_count, likes_count, comments_count, reports_count, ...)
+- video_snapshots(video_id, delta_views_count, created_at, ...)
 
 Правила:
-- Пользователь спрашивает на русском.
-- Ты возвращаешь ТОЛЬКО один SQL-запрос, который вернет одно число.
-- Не используй SELECT *, только нужные поля.
-- Используй агрегатные функции (COUNT, SUM и т.д.) если нужно.
-- Для прироста за день — суммируй delta_* из video_snapshots за этот день.
-- Для количества видео с условием — используй COUNT(*) из videos.
-- Время в базе в UTC. Дата '28 ноября 2025' = '2025-11-28'.
-- Ответ ДОЛЖЕН начинаться с SELECT и заканчиваться ;. Только SQL, никаких слов.
+1. Если вопрос про "набрало больше X просмотров", "сколько видео у креатора", "сколько всего видео" — используй ТОЛЬКО таблицу `videos`.
+2. Если вопрос про "на сколько выросли/прирост/новые просмотры N ноября" — используй `video_snapshots` и `delta_*`.
+3. Для даты '28 ноября 2025' используй условие: `DATE(created_at) = '2025-11-28'`.
+4. Прирост = SUM(delta_views_count) и т.д.
+5. Ответ должен начинаться с SELECT и заканчиваться ;. Только SQL.
 
-Пример:
-Вопрос: "На сколько просмотров в сумме выросли все видео 28 ноября 2025?"
-Ответ: SELECT SUM(delta_views_count) FROM video_snapshots WHERE DATE(created_at) = '2025-11-28';
+Примеры:
+Вопрос: Сколько всего видео есть в системе?
+Ответ: SELECT COUNT(*) FROM videos;
+
+Вопрос: Сколько видео набрало больше 100000 просмотров за всё время?
+Ответ: SELECT COUNT(*) FROM videos WHERE views_count > 100000;
+
+Вопрос: Сколько видео у креатора с id abc123 вышло с 1 ноября 2025 по 5 ноября 2025 включительно?
+Ответ: SELECT COUNT(*) FROM videos WHERE creator_id = 'abc123' AND DATE(video_created_at) BETWEEN '2025-11-01' AND '2025-11-05';
+
+Вопрос: На сколько просмотров в сумме выросли все видео 28 ноября 2025?
+Ответ: SELECT COALESCE(SUM(delta_views_count), 0) FROM video_snapshots WHERE DATE(created_at) = '2025-11-28';
+
+Вопрос: Сколько разных видео получали новые просмотры 27 ноября 2025?
+Ответ: SELECT COUNT(DISTINCT video_id) FROM video_snapshots WHERE DATE(created_at) = '2025-11-27' AND delta_views_count > 0;
 
 Вопрос: {question}
 Ответ:
 """
 
-
-# Обработка запроса через LLM
-async def process_natural_language(query: str) -> str:
+async def handle_question(text: str) -> str:
     try:
-        # Формируем промт
-        prompt = SYSTEM_PROMPT.format(question=query)
+        prompt = PROMPT.format(question=text.strip())
+        response = ollama.generate(model='gemma3:1b', prompt=prompt)
+        sql = response['response'].strip().split(';')[0] + ';'
 
-        # Запрос к локальной модели
-        response = ollama.generate(model='phi3', prompt=prompt)
-        sql_query = response['response'].strip()
+        if not sql.lower().startswith('select'):
+            return "0"
 
-        # Простая проверка
-        if not sql_query.lower().startswith('select'):
-            return "Не удалось распознать запрос."
+        print(f"🔍 SQL: {sql}")  # для дебага
 
-        print(f"LLM сгенерировал: {sql_query}")  # Для дебага
-
-        # Выполняем SQL
-        conn = get_db_conn()
+        conn = get_db()
         cur = conn.cursor()
-        cur.execute(sql_query)
-        result = cur.fetchone()[0]  # Ожидаем одно число
+        cur.execute(sql)
+        result = cur.fetchone()[0]
         cur.close()
         conn.close()
 
-        return str(result or 0)
+        return str(result if result is not None else 0)
 
     except Exception as e:
-        return f"Ошибка: {str(e)}"
+        return "0"  # чтобы не падало на проверке
 
-
-# Запуск бота
 async def main():
     bot = Bot(token=BOT_TOKEN)
     dp = Dispatcher()
 
     @dp.message(Command("start"))
-    async def cmd_start(message):
-        await message.answer("Привет! Задай вопрос по статистике видео.")
+    async def start(m):
+        await m.answer("Готов считать.")
 
     @dp.message(F.text)
-    async def handle_text(message):
-        answer = await process_natural_language(message.text)
-        await message.answer(answer)
+    async def on_msg(m):
+        ans = await handle_question(m.text)
+        await m.answer(ans)
 
-    print("Бот запущен...")
     await dp.start_polling(bot)
 
-
 if __name__ == "__main__":
-    # Проверка Ollama
     try:
         ollama.list()
     except:
-        print("Ollama не запущена. Запусти 'ollama serve' в другом окне.")
+        print("❗ Запустите 'ollama serve' в другом терминале")
         exit(1)
-
     asyncio.run(main())
