@@ -23,14 +23,14 @@ PROMPT = """
 
 Таблицы:
 - videos(id, creator_id, video_created_at, views_count, likes_count, comments_count, reports_count, ...)
-- video_snapshots(video_id, delta_views_count, created_at, ...)
+- video_snapshots(id, video_id, views_count, likes_count, comments_count, reports_count, delta_views_count, delta_likes_count, delta_comments_count, delta_reports_count, created_at, ...)
 
 Правила:
-1. Если вопрос про "набрало больше X просмотров", "сколько видео у креатора", "сколько всего видео" — используй ТОЛЬКО таблицу `videos`.
-2. Если вопрос про "на сколько выросли/прирост/новые просмотры N ноября" — используй `video_snapshots` и `delta_*`.
-3. Для даты '28 ноября 2025' используй условие: `DATE(created_at) = '2025-11-28'`.
-4. Прирост = SUM(delta_views_count) и т.д.
-5. Ответ должен начинаться с SELECT и заканчиваться ;. Только SQL.
+1. Если вопрос про количество видео, итоговые метрики (например, "набрало больше 100K просмотров") — используй ТОЛЬКО таблицу `videos`.
+2. Если вопрос про "прирост", "выросли", "новые просмотры", "сколько видео получали новые просмотры N ноября" — используй `video_snapshots` + `delta_*`.
+3. Если вопрос про **отрицательные дельты** (например, "просмотров стало меньше", "отрицательный прирост") — фильтруй по `delta_views_count < 0`.
+4. Для даты '28 ноября 2025' используй: `DATE(created_at) = '2025-11-28'`.
+5. Ответ должен начинаться с `SELECT` и заканчиваться `;`. Только SQL.
 
 Примеры:
 Вопрос: Сколько всего видео есть в системе?
@@ -39,14 +39,14 @@ PROMPT = """
 Вопрос: Сколько видео набрало больше 100000 просмотров за всё время?
 Ответ: SELECT COUNT(*) FROM videos WHERE views_count > 100000;
 
-Вопрос: Сколько видео у креатора с id abc123 вышло с 1 ноября 2025 по 5 ноября 2025 включительно?
-Ответ: SELECT COUNT(*) FROM videos WHERE creator_id = 'abc123' AND DATE(video_created_at) BETWEEN '2025-11-01' AND '2025-11-05';
-
 Вопрос: На сколько просмотров в сумме выросли все видео 28 ноября 2025?
 Ответ: SELECT COALESCE(SUM(delta_views_count), 0) FROM video_snapshots WHERE DATE(created_at) = '2025-11-28';
 
 Вопрос: Сколько разных видео получали новые просмотры 27 ноября 2025?
 Ответ: SELECT COUNT(DISTINCT video_id) FROM video_snapshots WHERE DATE(created_at) = '2025-11-27' AND delta_views_count > 0;
+
+Вопрос: Сколько всего есть замеров статистики (по всем видео), в которых число просмотров за час оказалось отрицательным — то есть по сравнению с предыдущим замером количество просмотров стало меньше?
+Ответ: SELECT COUNT(*) FROM video_snapshots WHERE delta_views_count < 0;
 
 Вопрос: {question}
 Ответ:
