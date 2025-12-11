@@ -17,63 +17,34 @@ def get_db():
         password="password"
     )
 
-# PROMPT = """
-# Ты — SQL-бот для аналитики видео. Отвечай ТОЛЬКО валидным SQL-запросом, который возвращает ОДНО целое число. Никаких слов.
-#
-# Таблицы:
-# - videos(id, creator_id, video_created_at, views_count, likes_count, comments_count, reports_count, ...)
-# - video_snapshots(id, video_id, views_count, likes_count, comments_count, reports_count, delta_views_count, delta_likes_count, delta_comments_count, delta_reports_count, created_at, ...)
-#
-# Правила:
-# 1. Если вопрос про "сколько видео", "сколько набрало", "опубликовано", "у креатора" + итоговые метрики → используй ТОЛЬКО `videos`.
-# 2. Если вопрос про **прирост, дельту, рост, "на сколько выросли"** — используй `SUM(delta_views_count)` из `video_snapshots`.
-# 3. Если в таком запросе есть **условие по `creator_id`**, нужно **JOIN video_snapshots с videos** по `video_id = videos.id`.
-# 4. Дата и время в снапшотах — поле `created_at` (тип TIMESTAMP).
-# 5. Для диапазона времени используй: `created_at >= '2025-11-28 10:00:00' AND created_at <= '2025-11-28 15:00:00'`.
-# 6. Ответ должен начинаться с `SELECT` и заканчиваться `;`. Только SQL.
-#
-# Примеры:
-# Вопрос: Сколько всего видео есть в системе?
-# Ответ: SELECT COUNT(*) FROM videos;
-#
-# Вопрос: Сколько видео набрало больше 100000 просмотров за всё время?
-# Ответ: SELECT COUNT(*) FROM videos WHERE views_count > 100000;
-#
-# Вопрос: Сколько видео у креатора с id abc123 набрали больше 10000 просмотров?
-# Ответ: SELECT COUNT(*) FROM videos WHERE creator_id = 'abc123' AND views_count > 10000;
-#
-# Вопрос: На сколько просмотров суммарно выросли все видео креатора с id cd87be38b50b4fdd8342bb3c383f3c7d в промежутке с 10:00 до 15:00 28 ноября 2025 года?
-# Ответ: SELECT COALESCE(SUM(s.delta_views_count), 0) FROM video_snapshots s JOIN videos v ON s.video_id = v.id WHERE v.creator_id = 'cd87be38b50b4fdd8342bb3c383f3c7d' AND s.created_at >= '2025-11-28 10:00:00' AND s.created_at <= '2025-11-28 15:00:00';
-#
-# Вопрос: На сколько просмотров в сумме выросли все видео 28 ноября 2025?
-# Ответ: SELECT COALESCE(SUM(delta_views_count), 0) FROM video_snapshots WHERE DATE(created_at) = '2025-11-28';
-#
-# Вопрос: Сколько разных видео получали новые просмотры 27 ноября 2025?
-# Ответ: SELECT COUNT(DISTINCT video_id) FROM video_snapshots WHERE DATE(created_at) = '2025-11-27' AND delta_views_count > 0;
-#
-# Вопрос: Сколько всего есть замеров статистики, в которых число просмотров за час оказалось отрицательным?
-# Ответ: SELECT COUNT(*) FROM video_snapshots WHERE delta_views_count < 0;
-#
-# Вопрос: Какое суммарное количество просмотров набрали все видео, опубликованные в июне 2025 года?
-# Ответ: SELECT SUM(views_count) FROM videos WHERE EXTRACT(YEAR FROM video_created_at) = 2025 AND EXTRACT(MONTH FROM video_created_at) = 6;
-#
-# Вопрос: {question}
-# Ответ:
-# """
-PROMPT = """
-Ты — SQL-бот для аналитики видео. Отвечай ТОЛЬКО валидным SQL-запросом, который возвращает ОДНО целое число. Никаких слов.
 
-Таблицы:
-- videos(id, creator_id, video_created_at, views_count, likes_count, comments_count, reports_count, ...)
-- video_snapshots(video_id, delta_views_count, created_at, ...)
+PROMPT = """
+Ты — SQL-бот для аналитики видео. Отвечай ТОЛЬКО валидным SQL-запросом, который возвращает ОДНО целое число. Никаких слов, пояснений, комментариев.
+
+Схема БД:
+- Таблица `videos` (финальная статистика):
+  id (TEXT), creator_id (TEXT), video_created_at (TIMESTAMP),
+  views_count (BIGINT), likes_count (BIGINT), comments_count (BIGINT), reports_count (BIGINT)
+- Таблица `video_snapshots` (почасовые замеры):
+  id (TEXT), video_id (TEXT), created_at (TIMESTAMP),
+  views_count (BIGINT), likes_count (BIGINT), comments_count (BIGINT), reports_count (BIGINT),
+  delta_views_count (BIGINT), delta_likes_count (BIGINT), delta_comments_count (BIGINT), delta_reports_count (BIGINT)
 
 Правила:
-1. «Дата публикации» = поле `video_created_at` в таблице `videos`.
-2. Для фильтрации по месяцу и году используй: `EXTRACT(YEAR FROM video_created_at) = 2025 AND EXTRACT(MONTH FROM video_created_at) = 6`.
-3. Для суммы просмотров — `SUM(views_count)`.
-4. Для количества видео — `COUNT(*)`.
-5. Для прироста за день — `SUM(delta_views_count)` из `video_snapshots`.
-6. Ответ должен начинаться с `SELECT` и заканчиваться `;`. Только SQL.
+1. Если вопрос про "сколько видео", "у креатора с id X", "опубликовано с ДАТА1 по ДАТА2", "набрало больше N просмотров" — используй ТОЛЬКО `videos`.
+2. Если нужно фильтровать и по креатору, и по просмотрам (> N) — используй:  
+   `SELECT COUNT(*) FROM videos WHERE creator_id = '...' AND views_count > N;`
+3. Если вопрос про "суммарное количество просмотров у видео, опубликованных в месяце/диапазоне" — используй `SUM(views_count)`.
+4. Дата публикации = `video_created_at`.
+5. Для месяца: `EXTRACT(YEAR FROM video_created_at) = 2025 AND EXTRACT(MONTH FROM video_created_at) = 6`.
+6. Для диапазона дат: `DATE(video_created_at) BETWEEN '2025-11-01' AND '2025-11-05'`.
+7. Если вопрос про "на сколько выросли/прирост/дельта" — используй `SUM(delta_views_count)` из `video_snapshots`.
+8. Если в таком запросе упоминается креатор — делай `JOIN video_snapshots s ON s.video_id = v.id` с таблицей `videos` и фильтруй по `v.creator_id`.
+9. Для времени в пределах дня:  
+   `s.created_at >= '2025-11-28 10:00:00' AND s.created_at <= '2025-11-28 15:00:00'`.
+10. Если вопрос про "сколько замеров с отрицательным приростом" — `WHERE delta_views_count < 0`.
+11. Всегда используй `COALESCE(..., 0)`, если есть риск NULL.
+12. Ответ должен начинаться с `SELECT` и заканчиваться `;`. Только SQL.
 
 Примеры:
 Вопрос: Сколько всего видео есть в системе?
@@ -82,7 +53,7 @@ PROMPT = """
 Вопрос: Сколько видео набрало больше 100000 просмотров за всё время?
 Ответ: SELECT COUNT(*) FROM videos WHERE views_count > 100000;
 
-Вопрос: Сколько видео у креатора с id aca1061a9d324ecf8c3fa2bb32d7be63 набрали больше 10000 просмотров?
+Вопрос: Сколько видео у креатора с id aca1061a9d324ecf8c3fa2bb32d7be63 набрали больше 10000 просмотров по итоговой статистике?
 Ответ: SELECT COUNT(*) FROM videos WHERE creator_id = 'aca1061a9d324ecf8c3fa2bb32d7be63' AND views_count > 10000;
 
 Вопрос: Сколько видео опубликовал креатор с id 8b76e572635b400c9052286a56176e03 в период с 1 ноября 2025 по 5 ноября 2025 включительно?
@@ -93,6 +64,9 @@ PROMPT = """
 
 Вопрос: На сколько просмотров в сумме выросли все видео 28 ноября 2025?
 Ответ: SELECT COALESCE(SUM(delta_views_count), 0) FROM video_snapshots WHERE DATE(created_at) = '2025-11-28';
+
+Вопрос: Сколько разных видео получали новые просмотры 27 ноября 2025?
+Ответ: SELECT COUNT(DISTINCT video_id) FROM video_snapshots WHERE DATE(created_at) = '2025-11-27' AND delta_views_count > 0;
 
 Вопрос: Сколько всего есть замеров статистики, в которых число просмотров за час оказалось отрицательным?
 Ответ: SELECT COUNT(*) FROM video_snapshots WHERE delta_views_count < 0;
